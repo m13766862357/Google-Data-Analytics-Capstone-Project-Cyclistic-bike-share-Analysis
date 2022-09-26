@@ -1,0 +1,252 @@
+---
+title: "Jaxon's Cyclistics Capstone"
+author: "Jaxon Song"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Install Basic Package for Reading & Data Analysis
+
+```{r}
+library(tidyverse)
+library(readr)
+```
+
+##Read Dataset
+
+```{r read}
+jan21 <- read.csv("202101-divvy-tripdata.csv")
+feb21 <- read.csv("202102-divvy-tripdata.csv")
+mar21 <- read.csv("202103-divvy-tripdata.csv")
+apr21 <- read.csv("202104-divvy-tripdata.csv")
+may21 <- read.csv("202105-divvy-tripdata.csv")
+jun21 <- read.csv("202106-divvy-tripdata.csv")
+jul21 <- read.csv("202107-divvy-tripdata.csv")
+aug21 <- read.csv("202108-divvy-tripdata.csv")
+sep21 <- read.csv("202109-divvy-tripdata.csv")
+oct21 <- read.csv("202110-divvy-tripdata.csv")
+nov21 <- read.csv("202111-divvy-tripdata.csv")
+dec21 <- read.csv("202112-divvy-tripdata.csv")
+```
+
+##Processing & Cleaning
+###Cleaning package installation and loading
+
+```{r clean pack}
+library(dplyr)
+library(skimr)
+library(janitor)
+library(mice)
+```
+
+##RBind Dataset & Empty Pattern Analysis
+```{r combine data}
+year2021 <- rbind(jan21,feb21,mar21,apr21,may21,jun21,jul21, aug21, sep21, oct21, nov21, dec21)
+```
+
+##Drop NA for Distance and Station Analysis
+```{r drop null}
+ds_year2021 <- year2021 %>%
+  drop_na(start_station_name, start_station_id, end_station_id, end_station_name, end_lat, end_lng)
+
+```
+
+###trim the tables, make the format clear without extra
+###spaces, ds_tables are for distance and station analysis
+###and tdt_tables are for time, duration, and bike type prefer
+```{r cleannames}
+tdt_year2021 <-clean_names(year2021)
+ds_year2021 <-clean_names(ds_year2021)
+```
+
+###Replace Empty Cells with NA for tdt analysis
+```{r empty drop}
+tdt_year2021[tdt_year2021 == "" | tdt_year2021 == " "] <-NA
+ds_year2021[ds_year2021 == "" | ds_year2021 == " "] <-NA
+```
+
+###Clean Duplicates
+```{r distinct col}
+tdt_year2021 <- distinct(tdt_year2021)
+ds_year2021 <- distinct(ds_year2021)
+```
+
+###Use ymd_hms() to convert character date string into dates for time and 
+###duration analysis
+```{r  time transfer}
+library(lubridate)
+tdt_year2021$started_at <- ymd_hms(tdt_year2021$started_at)
+tdt_year2021$ended_at <- ymd_hms(tdt_year2021$ended_at)
+```
+
+###Including Plots Packages
+```{r graphing packs}
+library(ggplot2)
+library(ggrepel)
+```
+
+# I. discover the affect of preferred bike types
+```{r Preferred Bikes, echo=FALSE}
+#Extract Month
+tdt_inmonth_year2021 <- tdt_year2021 %>%
+  mutate(month = format(tdt_year2021$started_at, "%m"))
+
+#tdt_inmonth_year2021 <- filter(tdt_inmonth_year2021, member_casual == "member")
+ggplot(tdt_inmonth_year2021, aes(x = month, fill = member_casual)) +
+  geom_bar(position = "dodge") +
+  geom_text(aes(label = ..count..), stat = "count", hjust = 0.5, 
+            colour = "black", size = 2.3, 
+            position = position_dodge(width = 0.9)) +
+  facet_wrap(~rideable_type) +
+  labs(title = "2021_Bike_Preferred_member",
+       y = "number_of_bikes") +
+  scale_fill_manual(values=c("darkturquoise","red")) +
+  coord_flip()
+```
+
+#Analysis II. Duation Analysis
+```{r duration, echo=FALSE}
+
+tdt_duration_year2021 <- tdt_inmonth_year2021 %>%
+  mutate(duration = difftime(ended_at, started_at, units = "mins")) %>%
+  mutate_if(is.difftime, round, digits = 3)
+tdt_duration_year2021$duration <- as.numeric(tdt_duration_year2021$duration)
+
+duration_plot2021 = tdt_duration_year2021 %>%
+  group_by(month, member_casual) %>%
+  summarise(number_customers = n(), avg_riding_time = round(mean(duration),  digits = 3))
+
+options(dplyr.summarise.inform = FALSE)
+
+duration_plot2021 %>%
+  ggplot(aes(x = month, y = avg_riding_time, fill= member_casual, group = member_casual)) +
+  geom_line(aes(linetype = member_casual)) +
+  geom_point(shape=21, size=3) +
+  geom_text_repel(aes(label = avg_riding_time))+
+  labs(title = "2021_Bike_Preferred_member", 
+       y = "avg_riding_time (min)") + 
+  scale_fill_manual(values=c("green","red"))
+```
+
+#Analysis III. Time Analysis
+```{r Time, echo=FALSE}
+
+time_year2021 <- tdt_year2021 %>%
+  mutate(time = format(tdt_year2021$started_at, "%H"))
+         
+time_plot2021 <- time_year2021 %>%
+  group_by(time, member_casual) %>%
+  summarise(user_at_the_time = n())
+
+time_plot2021 %>%
+  ggplot(aes(x = time, y = user_at_the_time, fill = member_casual)) +
+  geom_bar(stat = "identity", position=position_dodge())
+
+time_plot2021 %>%
+  ggplot(aes(x = time, y = user_at_the_time, fill = member_casual, group = member_casual)) +
+  geom_line(aes(linetype = member_casual)) +
+  geom_label_repel(aes(label = user_at_the_time)) +
+  geom_point(shape=21, size=3) +
+  labs(title = "2021_Time_Analysis", x = "Time of the Day")
+```
+
+#Analysis IV. Distance Analysis
+```{r Distance Analysis, echo=FALSE}
+#4. Distance Analysis
+library(geosphere)
+ds_distance_year2021 <- ds_year2021 %>%
+  mutate(distance = round(distVincentyEllipsoid
+                          (ds_year2021[, c("start_lng", "start_lat")],
+                            ds_year2021[, c("end_lng", "end_lat")])/1000, 3))
+
+#Extract to month and plot
+ds_distance_year2021$started_at <- ymd_hms(ds_distance_year2021$started_at)
+ds_inmonth_year2021 <- ds_distance_year2021 %>%
+  mutate(month = format(ds_distance_year2021$started_at, "%m"))
+
+distance_month2021 <- ds_inmonth_year2021 %>%
+  group_by(month, member_casual) %>%
+  summarise(number_customers = n(), avg_distance = round(mean(distance),  digits = 2))
+
+distance_month2021 %>%
+  ggplot(aes(x = month, y = avg_distance, fill= member_casual, group = member_casual)) +
+  geom_line(aes(linetype = member_casual)) +
+  geom_point(shape=21, size=3) +
+  geom_label_repel(aes(label = avg_distance))+
+  labs(title = "2021_average_distance", 
+       y = "avg_distance (km)")
+```
+
+#Analysis V. Station Analysis
+
+###Top10 start_station for casual
+```{r Most Popular Casual, echo=FALSE}
+
+ds_startid2021 <- ds_year2021 %>%
+  group_by(start_station_id, start_station_name, member_casual)  %>%
+  summarise(number_customers = n()) %>%
+  filter(start_station_id != 'NA', member_casual == 'casual') %>%
+  arrange(-number_customers)
+
+
+#Top10 end_station for casual
+ds_endid2021 <- ds_year2021 %>%
+  group_by(end_station_id, end_station_name, member_casual)  %>%
+  summarise(number_customers = n()) %>%
+  filter(end_station_id != 'NA', member_casual == 'casual') %>%
+  arrange(-number_customers)
+
+#The Overall Top10 most Popular Station for Casuals
+ds_startid2021 <- ds_startid2021 %>%
+  rename(station_id = start_station_id, station_name = start_station_name)
+ds_endid2021 <- ds_endid2021 %>%
+  rename(station_id = end_station_id, station_name = end_station_name)  
+ds_station2021 = ds_startid2021 %>%
+  inner_join(ds_endid2021, by  = "station_name") 
+
+ds_casual_station <- ds_station2021 %>%
+  mutate(number_of_customers = number_customers.x + number_customers.y) %>%
+  rename(station_id = station_id.x, member_casual = member_casual.x) %>%
+  select(station_id, station_name, member_casual, number_of_customers) %>%
+  arrange(-number_of_customers)
+
+head(ds_casual_station, 10)
+```
+
+###Top10 start_station for members
+```{r Most Popular Members}
+ds_member_startid2021 <- ds_year2021 %>%
+  group_by(start_station_id, start_station_name, member_casual)  %>%
+  summarise(number_customers = n()) %>%
+  filter(start_station_id != 'NA', member_casual == 'member') %>%
+  arrange(-number_customers)
+
+#Top10 end_station for members
+ds_member_endid2021 <- ds_year2021 %>%
+  group_by(end_station_id, end_station_name, member_casual)  %>%
+  summarise(number_customers = n()) %>%
+  filter(end_station_id != 'NA', member_casual == 'member') %>%
+  arrange(-number_customers)
+
+#The Overall Top10 most Popular Station for members
+ds_member_startid2021 <- ds_member_startid2021 %>%
+  rename(station_id = start_station_id, station_name = start_station_name)
+ds_member_endid2021 <- ds_member_endid2021 %>%
+  rename(station_id = end_station_id, station_name = end_station_name)  
+ds_member_station2021 <- ds_member_startid2021 %>%
+  inner_join(ds_member_startid2021, by  = "station_name") 
+
+ds_member_station <- ds_member_station2021 %>%
+  mutate(number_of_customers = number_customers.x + number_customers.y) %>%
+  rename(station_id = station_id.x, member_casual = member_casual.x) %>%
+  select(station_id, station_name, member_casual, number_of_customers) %>%
+  arrange(-number_of_customers)
+ 
+head(ds_member_station, 10)
+```
